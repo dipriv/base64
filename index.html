@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Conversor de Imagem para Base64 (Máx 50KB)</title>
+    <title>Conversor Avançado de Imagem para Base64 (Máx 50KB)</title>
     <style>
         :root {
             --bg-color: #f8fafc;
@@ -53,19 +53,80 @@
         p.subtitle {
             font-size: 0.925rem;
             color: var(--text-muted);
-            margin-bottom: 24px;
+            margin-bottom: 20px;
         }
+
+        /* Seção de URL */
+        .url-section {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+
+        .url-input {
+            flex-grow: 1;
+            padding: 10px 14px;
+            font-size: 0.9rem;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            outline: none;
+            background: #f8fafc;
+            color: var(--text-color);
+        }
+
+        .url-input:focus {
+            border-color: var(--primary);
+            background: #fff;
+        }
+
+        .btn-url {
+            background-color: #475569;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 0 16px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            white-space: nowrap;
+        }
+
+        .btn-url:hover {
+            background-color: #334155;
+        }
+
+        .divider {
+            text-align: center;
+            position: relative;
+            margin: 16px 0;
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .divider::before, .divider::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            width: 42%;
+            height: 1px;
+            background: var(--border-color);
+        }
+
+        .divider::before { left: 0; }
+        .divider::after { right: 0; }
 
         /* Área de Drop / Paste */
         .dropzone {
             border: 2px dashed var(--border-color);
             border-radius: var(--radius);
-            padding: 40px 20px;
+            padding: 30px 20px;
             text-align: center;
             background-color: #fcfcfd;
             cursor: pointer;
             transition: all 0.2s ease;
-            position: relative;
             outline: none;
         }
 
@@ -75,9 +136,9 @@
         }
 
         .dropzone p {
-            font-size: 0.95rem;
+            font-size: 0.925rem;
             color: var(--text-muted);
-            margin-top: 12px;
+            margin-top: 10px;
         }
 
         .dropzone p strong {
@@ -85,8 +146,8 @@
         }
 
         .upload-icon {
-            width: 48px;
-            height: 48px;
+            width: 40px;
+            height: 40px;
             color: var(--primary);
             margin: 0 auto;
         }
@@ -153,7 +214,7 @@
 
         textarea {
             width: 100%;
-            height: 120px;
+            height: 110px;
             padding: 12px;
             font-size: 0.85rem;
             font-family: monospace;
@@ -207,6 +268,7 @@
             opacity: 0;
             transition: opacity 0.3s ease;
             pointer-events: none;
+            z-index: 1000;
         }
 
         .toast.show {
@@ -218,14 +280,22 @@
 
     <div class="container">
         <h1>Conversor Base64</h1>
-        <p class="subtitle">Cole um print direto da área de transferência (Ctrl+V) ou clique para enviar uma imagem.</p>
+        <p class="subtitle">Cole um print, cole um link de imagem (Ctrl+V ou no campo), ou selecione do dispositivo.</p>
+
+        <!-- Campo dedicado para URL da imagem -->
+        <div class="url-section">
+            <input type="url" id="imageUrlInput" class="url-input" placeholder="Cole o link da imagem aqui (ex: https://site.com/foto.jpg)">
+            <button class="btn-url" id="loadUrlBtn" onclick="processImageUrl()">Converter Link</button>
+        </div>
+
+        <div class="divider">ou</div>
 
         <!-- Zona de Upload / Paste -->
         <div class="dropzone" id="dropZone">
             <svg class="upload-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
-            <p>Clique aqui ou <strong>cole sua imagem (Ctrl+V)</strong></p>
+            <p>Clique, envie arquivo ou <strong>cole print / link (Ctrl+V)</strong></p>
             <input type="file" id="fileInput" accept="image/*">
         </div>
 
@@ -252,6 +322,7 @@
     <script>
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
+        const imageUrlInput = document.getElementById('imageUrlInput');
         const resultContainer = document.getElementById('resultContainer');
         const imagePreview = document.getElementById('imagePreview');
         const base64Output = document.getElementById('base64Output');
@@ -269,21 +340,75 @@
             }
         });
 
-        // Ouvir eventos de colar (Ctrl+V) em qualquer lugar da página
+        // Ouvir eventos de colar (Ctrl+V) na página inteira
         window.addEventListener('paste', (e) => {
+            // Se o usuário estiver focado no input de texto, deixa colar normalmente como texto
+            if (document.activeElement === imageUrlInput) return;
+
             const items = e.clipboardData || e.originalEvent.clipboardData;
             if (!items) return;
 
+            // 1. Verificar se colou um arquivo de imagem (Print)
+            let imageFound = false;
             for (let i = 0; i < items.items.length; i++) {
                 if (items.items[i].type.indexOf('image') !== -1) {
                     const blob = items.items[i].getAsFile();
                     processImageFile(blob);
+                    imageFound = true;
                     break;
                 }
             }
+
+            if (imageFound) return;
+
+            // 2. Verificar se colou um texto que é um Link de Imagem ou URL válida
+            const pastedText = e.clipboardData.getData('text').trim();
+            if (pastedText && isValidUrl(pastedText)) {
+                imageUrlInput.value = pastedText;
+                processImageUrl(pastedText);
+            }
         });
 
-        // Processar e otimizar imagem para garantir limite máximo de ~50KB
+        // Validar formato básico de URL
+        function isValidUrl(string) {
+            try {
+                new URL(string);
+                return true;
+            } catch (_) {
+                return false;
+            }
+        }
+
+        // Processar imagem via URL do campo de texto
+        function processImageUrl(urlOverride = null) {
+            const url = urlOverride || imageUrlInput.value.trim();
+            if (!url) {
+                alert('Por favor, insira ou cole um link de imagem válido.');
+                return;
+            }
+
+            // Usamos um proxy público para mitigar problemas de CORS ao carregar imagens externas de outros sites
+            const proxyUrl = 'https://images.weserv.nl/?url=' + encodeURIComponent(url);
+
+            const img = new Image();
+            img.crossOrigin = 'Anonymous';
+            
+            img.onload = function() {
+                compressAndConvert(img, 'image/jpeg');
+            };
+            
+            img.onerror = function() {
+                // Tenta carregar direto caso o proxy falhe
+                img.src = url;
+                img.onerror = function() {
+                    alert('Não foi possível carregar a imagem a partir deste link. Verifique se o link é público e direto.');
+                }
+            };
+            
+            img.src = proxyUrl;
+        }
+
+        // Processar arquivo de imagem local / colado
         function processImageFile(file) {
             const reader = new FileReader();
             reader.onload = function(event) {
@@ -296,6 +421,7 @@
             reader.readAsDataURL(file);
         }
 
+        // Motor de compressão e conversão (Mantém <= 50KB com proporção original)
         function compressAndConvert(img, originalType) {
             const canvas = document.createElement('canvas');
             let ctx = canvas.getContext('2d');
@@ -303,14 +429,8 @@
             let width = img.width;
             let height = img.height;
 
-            // Começa com o formato e qualidade ideais
-            let mimeType = originalType === 'image/png' ? 'image/png' : 'image/jpeg';
+            let mimeType = (originalType === 'image/png') ? 'image/jpeg' : (originalType || 'image/jpeg');
             let quality = 0.90;
-
-            // Se for PNG grande, forçamos JPEG para conseguir compactar abaixo de 50KB mantendo boa nitidez visual
-            if (originalType === 'image/png') {
-                mimeType = 'image/jpeg';
-            }
 
             canvas.width = width;
             canvas.height = height;
@@ -319,7 +439,6 @@
             let dataUrl = canvas.toDataURL(mimeType, quality);
             let sizeInKB = Math.round((dataUrl.length * (3/4)) / 1024);
 
-            // Redução iterativa de dimensões e qualidade se passar de 50KB
             let attempts = 0;
             while (sizeInKB > 50 && attempts < 8) {
                 if (quality > 0.4) {
@@ -337,20 +456,19 @@
                 attempts++;
             }
 
-            // Exibir resultados na interface
             imagePreview.src = dataUrl;
             base64Output.value = dataUrl;
             
             if (sizeInKB <= 50) {
                 fileSizeInfo.innerHTML = `Tamanho otimizado: <span class="size-ok">${sizeInKB} KB</span> (${width}x${height}px)`;
             } else {
-                fileSizeInfo.innerHTML = `Tamanho: <span class="size-warning">${sizeInKB} KB</span> (A imagem é densa em detalhes)`;
+                fileSizeInfo.innerHTML = `Tamanho: <span class="size-warning">${sizeInKB} KB</span> (Muitos detalhes na imagem)`;
             }
 
             resultContainer.classList.add('active');
         }
 
-        // Função de copiar
+        // Copiar para área de transferência
         function copyToClipboard() {
             base64Output.select();
             navigator.clipboard.writeText(base64Output.value).then(() => {
